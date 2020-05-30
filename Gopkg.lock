@@ -8,10 +8,10 @@
   version = "v1.12.0"
 
 [[projects]]
-  name = "github.com/dgrijalva/jwt-go"
-  packages = ["."]
-  revision = "06ea1031745cb8b3dab3f6a236daf2b0aa468b7e"
-  version = "v3.2.0"
+  name = "github.com/davecgh/go-spew"
+  packages = ["spew"]
+  revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
+  version = "v1.1.1"
 
 [[projects]]
   name = "github.com/gin-contrib/sse"
@@ -56,18 +56,6 @@
   version = "v1.7.3"
 
 [[projects]]
-  name = "github.com/jinzhu/gorm"
-  packages = [".","dialects/postgres"]
-  revision = "79a77d771dee4e4b60e9c543e8663bbc80466670"
-  version = "v1.9.12"
-
-[[projects]]
-  name = "github.com/jinzhu/inflection"
-  packages = ["."]
-  revision = "f5c5f50e6090ae76a29240b61ae2a90dd810112e"
-  version = "v1.0.0"
-
-[[projects]]
   name = "github.com/joho/godotenv"
   packages = ["."]
   revision = "23d116af351c84513e1946b527c88823e476be13"
@@ -87,7 +75,7 @@
 
 [[projects]]
   name = "github.com/lib/pq"
-  packages = [".","hstore","oid","scram"]
+  packages = [".","oid","scram"]
   revision = "99274577be97ac9b1d95a2d61d566dc9b7cc6a54"
   version = "v1.3.0"
 
@@ -110,22 +98,10 @@
   version = "1.0.1"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/textmagic/textmagic-rest-go"
-  packages = ["."]
-  revision = "461c1f3769685af8a1069888c684455f04658b3b"
-
-[[projects]]
   name = "github.com/ugorji/go"
   packages = ["codec"]
   revision = "23ab95ef5dc3b70286760af84ce2327a2b64ed62"
   version = "v1.1.7"
-
-[[projects]]
-  branch = "master"
-  name = "golang.org/x/crypto"
-  packages = ["bcrypt","blowfish"]
-  revision = "530e935923ad688be97c15eeb8e5ee42ebf2b54a"
 
 [[projects]]
   branch = "master"
@@ -160,6 +136,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c253fdfcb951c5db29998c60323f372c762fd823c57203c593ef58501fa01d9f"
+  inputs-digest = "4d69069095f9aba340a1aacba2b5a5bc2d94493dcdb83eb0267b262eb9edaaff"
   solver-name = "gps-cdcl"
   solver-version = 1

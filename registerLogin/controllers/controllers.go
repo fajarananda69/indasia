@@ -1,56 +1,57 @@
 package controllers
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"indasia/registerLogin/config"
-	"indasia/registerLogin/mail"
+	"indasia/registerLogin/helper"
 	"indasia/registerLogin/models"
+	"indasia/registerLogin/service"
 	"log"
 	"net/http"
-	"time"
+	"strings"
 
-	"github.com/astaxie/beego/orm"
 	"github.com/gin-gonic/gin"
 )
 
-type Velidate struct {
-	Email string `json:"email" orm:"size(128)"`
-}
+// type CheckEmail struct {
+// 	Email string `json:"email" orm:"size(128)"`
+// }
 
-var ORM orm.Ormer
+// var ORM orm.Ormer
 
-func init() {
-	config.ConnectToDb()
-	ORM = config.GetOrmObject()
-}
+// func init() {
+// 	config.ConnectToDb()
+// 	ORM = config.GetOrmObject()
+// }
 
-func (r *Velidate) Verify() bool {
-	var val bool
-	query := fmt.Sprintf("SELECT * FROM login.users WHERE email = '%s' ", r.Email)
-	err := ORM.Raw(query).QueryRow(&r)
-	if err == nil {
-		return true
-	} else {
-		return false
-	}
-	return val
-}
+// func (r *CheckEmail) CheckEmail() bool {
+// 	var val bool
+// 	query := fmt.Sprintf("SELECT * FROM login.users WHERE email = '%s' ", r.Email)
+// 	err := ORM.Raw(query).QueryRow(&r)
+// 	if err == nil {
+// 		return true
+// 	} else {
+// 		return false
+// 	}
+// 	return val
+// }
 
 func SetRegister(c *gin.Context) {
 	var newUser models.Users
+	// clients := config.RedisConn()
 	c.BindJSON(&newUser)
 
-	req := Velidate{
-		Email: newUser.Email,
+	req := service.CheckUser{
+		Email:    newUser.Email,
+		Password: newUser.Password,
 	}
 
-	res := req.Verify()
-	if res != true {
+	res := req.CheckEmail()
+	pass := req.CheckPass()
+	if res != true && pass == true {
 		email := newUser.Email
 
-		token := models.GetTOTPToken(email)
+		token := helper.GetTOTPToken(email)
 		data := map[string]interface{}{
 			"email":    newUser.Email,
 			"password": newUser.Password,
@@ -59,10 +60,10 @@ func SetRegister(c *gin.Context) {
 			"image":    newUser.Image,
 			"token":    token,
 		}
-		data1, _ := json.Marshal(data)
-		clients := config.RedisConn()
-		key := hex.EncodeToString([]byte(email))
-		err := clients.Set(key, data1, 600*time.Second).Err()
+		dataString, _ := json.Marshal(data)
+		key := helper.ToMd5(email)
+		err := service.SetRedis(key, dataString, 600)
+		// err := clients.Set(key, data1, 600*time.Second).Err()
 		// err := clients.Set(key, string(data1), 0).Err()
 		if err != nil {
 			panic(err)
@@ -70,62 +71,74 @@ func SetRegister(c *gin.Context) {
 				gin.H{"status": http.StatusInternalServerError, "error": "Email is exists"})
 		} else {
 
-			mail.SendMail(email, "http://localhost:3000/indasia/validateToken/"+key)
+			helper.SendMail(email, "http://localhost:3000/indasia/validateToken/"+key)
 
 			c.JSON(http.StatusOK,
-				gin.H{"status": http.StatusOK, "response": "check verification in your email"})
+				gin.H{"status": http.StatusOK, "response": "please check verification in your email"})
 		}
 	} else {
 		c.JSON(http.StatusInternalServerError,
-			gin.H{"status": http.StatusInternalServerError, "error": "Email is exist"})
+			gin.H{"status": http.StatusInternalServerError, "error": "Email is exist or Password invalid"})
 	}
 
 }
 
-func saveRegister(data map[string]interface{}) models.ReturnData {
-	// key := c.Param("key")
+func ValidateToken(c *gin.Context) {
+	key := c.Param("key")
+	token := c.Query("token")
+
 	// clients := config.RedisConn()
 	// val, err := clients.Get(key).Result()
 	// if err != nil {
 	// 	panic(err)
 	// }
-	// var data map[string]interface{}
 
-	// if err := json.Unmarshal([]byte(val), &data); err != nil {
-	// 	panic(err)
-	// }
+	val := service.GetRedis(key)
+	var data map[string]interface{}
+
+	if err := json.Unmarshal([]byte(val), &data); err != nil {
+		panic(err)
+	}
+	if token == data["token"] {
+		save := saveRegister(data)
+		c.JSON(http.StatusOK, gin.H{"status": save.Status, "users": save.Data, "message": save.Message})
+	} else {
+		c.JSON(http.StatusInternalServerError,
+			gin.H{"status": http.StatusInternalServerError, "error": "invalid token"})
+	}
+
+}
+
+func saveRegister(data map[string]interface{}) models.ReturnData {
+
 	var response models.ReturnData
 
-	email := data["email"].(string)
-	password := models.Encrypt(data["password"].(string))
-	username := data["username"].(string)
-	phone := data["phone"].(string)
-	image := data["image"].(string)
+	// email := data["email"].(string)
+	// password := helper.Encrypt2(data["password"].(string))
+	// username := data["username"].(string)
+	// phone := data["phone"].(string)
+	// image := data["image"].(string)
 
-	req := Velidate{
-		Email: email,
+	req := service.CheckUser{
+		Email: data["email"].(string),
 	}
-	res := req.Verify()
+	res := req.CheckEmail()
 
 	if res != true {
-		query := fmt.Sprintf("INSERT INTO login.users (email,password,user_name,phone,image) VALUES ('%s','%s','%s','%s','%s') ", email, password, username, phone, image)
-		_, errs := ORM.Raw(query).Exec()
+		errs := service.InsertDB(data)
+		// query := fmt.Sprintf("INSERT INTO login.users (email,password,username,phone,image) VALUES ('%s','%s','%s','%s','%s') ", email, password, username, phone, image)
+		// _, errs := ORM.Raw(query).Exec()
 
 		if errs == nil {
-			// c.JSON(http.StatusOK, gin.H{
-			// 	"status":    http.StatusOK,
-			// 	"email":     email,
-			// 	"user_name": username,
-			// 	"phone":     phone,
-			// 	"image":     image})
 			mapRes := map[string]interface{}{
-				"email":     email,
-				"user_name": username,
-				"phone":     phone,
-				"image":     image,
+				"email":    data["email"].(string),
+				"username": data["username"].(string),
+				"phone":    data["phone"].(string),
+				"image":    data["image"].(string),
 			}
 			response = models.ReturnData{Status: http.StatusOK, Data: mapRes, Message: "Sucsess"}
 		} else {
+			fmt.Println(errs)
 			log.Panic()
 			response = models.ReturnData{Status: http.StatusInternalServerError, Data: "", Message: "Register failed"}
 		}
@@ -136,36 +149,53 @@ func saveRegister(data map[string]interface{}) models.ReturnData {
 }
 
 func Login(c *gin.Context) {
-	var user models.Users
+	// var user models.Users
 	var login models.Login
 	c.BindJSON(&login)
-	email := login.Email
-	password := models.Encrypt(login.Password)
-	fmt.Println("DAD ", models.Decrypt(password), password)
-	query := fmt.Sprintf("SELECT * FROM login.users WHERE email = '%s' AND password = '%s' ", email, password)
-	err := ORM.Raw(query).QueryRow(&user)
-	if err == nil {
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "users": &user})
-	} else {
-		fmt.Println(err)
-		c.JSON(http.StatusInternalServerError,
-			gin.H{"status": http.StatusInternalServerError, "error": "Failed login"})
+	// email := login.Email
+	// password := helper.Encrypt2(login.Password)
+
+	req := service.CheckUser{
+		Email:    login.Email,
+		Password: helper.Encrypt2(login.Password),
 	}
+	res := req.CheckLogin()
+	// status := service.CheckLogin(email, password)
+
+	switch {
+	case strings.Contains(res, "active"):
+		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "users": "Success Login"})
+	case strings.Contains(res, "pendding"):
+		c.JSON(http.StatusInternalServerError,
+			gin.H{"status": http.StatusInternalServerError, "error": "Account pennding"})
+	default:
+		c.JSON(http.StatusInternalServerError,
+			gin.H{"status": http.StatusInternalServerError, "error": "Account stop"})
+	}
+	// query := fmt.Sprintf("SELECT * FROM login.users WHERE email = '%s' AND password = '%s' ", email, password)
+	// err := ORM.Raw(query).QueryRow(&user)
+	// if err == nil {
+	// 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "users": "Login Success"})
+	// } else {
+	// 	fmt.Println(err)
+	// 	c.JSON(http.StatusInternalServerError,
+	// 		gin.H{"status": http.StatusInternalServerError, "error": "Failed login"})
+	// }
 }
 
 func ForgotPass(c *gin.Context) {
 	var forgot models.Login
 	c.BindJSON(&forgot)
-	req := Velidate{
+	req := service.CheckUser{
 		Email: forgot.Email,
 	}
-	res := req.Verify()
+	res := req.CheckEmail()
 
 	// email := forgot.Email
 	// query := fmt.Sprintf("SELECT email FROM login.users WHERE email = '%s' ", email)
 	// _, err := ORM.Raw(query).Exec()
 	if res == true {
-		m := mail.SendMail(forgot.Email, "http://localhost:3000/indasia/newpass")
+		m := helper.SendMail(forgot.Email, "http://localhost:3000/indasia/newpass")
 		if m == true {
 			c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "response": "success send mail"})
 		} else {
@@ -180,21 +210,25 @@ func ForgotPass(c *gin.Context) {
 }
 
 func SetNewPass(c *gin.Context) {
-	var user models.Users
+	// var user models.Users
 	var newpass models.Login
 
 	c.BindJSON(&newpass)
 
-	req := Velidate{
-		Email: newpass.Email,
+	req1 := service.CheckUser{
+		Email:    newpass.Email,
+		Password: newpass.Password,
 	}
-	res := req.Verify()
-	if res == true {
+	res := req1.CheckEmail()
+	pass := req1.CheckPass()
+	if res == true && pass == true {
 		email := newpass.Email
-		password := models.Encrypt(newpass.Password)
-		query := fmt.Sprintf("UPDATE login.users SET password = '%s' WHERE email = '%s' ", password, email)
-		err := ORM.Raw(query).QueryRow(&user)
-		if err != nil {
+		password := helper.Encrypt2(newpass.Password)
+
+		err := service.UpdatePass(email, password)
+		// query := fmt.Sprintf("UPDATE login.users SET password = '%s' WHERE email = '%s' ", password, email)
+		// err := ORM.Raw(query).QueryRow(&user)
+		if err == nil {
 			c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "users": "Success resset password"})
 		} else {
 			fmt.Println(err)
@@ -204,31 +238,6 @@ func SetNewPass(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusInternalServerError,
 			gin.H{"status": http.StatusInternalServerError, "error": "Email not found"})
-	}
-
-}
-
-func ValidateToken(c *gin.Context) {
-	key := c.Param("key")
-	token := c.Query("token")
-	fmt.Println("Token", token)
-
-	clients := config.RedisConn()
-	val, err := clients.Get(key).Result()
-	if err != nil {
-		panic(err)
-	}
-	var data map[string]interface{}
-
-	if err := json.Unmarshal([]byte(val), &data); err != nil {
-		panic(err)
-	}
-	if token == data["token"] {
-		save := saveRegister(data)
-		c.JSON(http.StatusOK, gin.H{"status": save.Status, "users": save.Data, "message": save.Message})
-	} else {
-		c.JSON(http.StatusInternalServerError,
-			gin.H{"status": http.StatusInternalServerError, "error": "invalid token"})
 	}
 
 }
